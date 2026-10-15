@@ -2,9 +2,6 @@ name: plan
 
 on:
   pull_request:
-    paths:
-      - "terraform/**"
-      - ".github/workflows/plan.yml"
 
 permissions:
   id-token: write
