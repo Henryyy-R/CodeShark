@@ -1,7 +1,7 @@
 locals {
   location = "eastasia"
 
-  # Placeholder until DeskShark's own image is in the registry
+  # Placeholder image, copied into our own registry. DeskShark's image replaces it later.
   image       = "${data.azurerm_container_registry.shared.login_server}/quickstart:latest"
   target_port = 80
 
@@ -40,6 +40,12 @@ resource "azurerm_container_app_environment" "this" {
   resource_group_name        = data.azurerm_resource_group.this.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
   tags                       = local.tags
+
+  # Azure adds a default "Consumption" workload profile that the provider
+  # reports as a difference on every plan. We leave it to Azure.
+  lifecycle {
+    ignore_changes = [workload_profile]
+  }
 }
 
 # The app's own identity, so it can pull images without a password.
@@ -62,6 +68,7 @@ resource "azurerm_container_app" "deskshark" {
   container_app_environment_id = azurerm_container_app_environment.this.id
   resource_group_name          = data.azurerm_resource_group.this.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
   tags                         = local.tags
 
   identity {
@@ -78,6 +85,12 @@ resource "azurerm_container_app" "deskshark" {
     min_replicas = 0 # scales to zero when idle, so staging costs almost nothing
     max_replicas = 1
 
+    # Azure adds this default scaler itself, so we state it explicitly.
+    http_scale_rule {
+      name                = "http-scaler"
+      concurrent_requests = "10"
+    }
+
     container {
       name   = "deskshark"
       image  = local.image
@@ -89,11 +102,22 @@ resource "azurerm_container_app" "deskshark" {
   ingress {
     external_enabled = true
     target_port      = local.target_port
+    transport        = "http"
 
     traffic_weight {
       latest_revision = true
       percentage      = 100
     }
+  }
+
+  # Azure doesn't report these back for a single-revision app, so the
+  # provider would show a permanent difference.
+  lifecycle {
+    ignore_changes = [
+      ingress[0].traffic_weight,
+      template[0].cooldown_period_in_seconds,
+      template[0].polling_interval_in_seconds,
+    ]
   }
 
   depends_on = [azurerm_role_assignment.acr_pull]
