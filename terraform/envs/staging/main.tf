@@ -2,7 +2,7 @@ locals {
   location = "eastasia"
 
   # Placeholder until DeskShark's own image is in the registry
-  image       = "mcr.microsoft.com/k8se/quickstart:latest"
+  image       = "${data.azurerm_container_registry.shared.login_server}/quickstart:latest"
   target_port = 80
 
   tags = {
