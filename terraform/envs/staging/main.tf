@@ -1,9 +1,7 @@
 locals {
-  location = "eastasia"
-
-  # Placeholder image, copied into our own registry. DeskShark's image replaces it later.
-  image       = "${data.azurerm_container_registry.shared.login_server}/quickstart:latest"
-  target_port = 80
+  location    = "eastasia"
+  image       = "${data.azurerm_container_registry.shared.login_server}/deskshark:${local.image_tag}"
+  target_port = 5000
 
   tags = {
     app   = "deskshark"
@@ -20,6 +18,12 @@ data "azurerm_resource_group" "this" {
 data "azurerm_container_registry" "shared" {
   name                = "crdskf2500b"
   resource_group_name = "rg-dsk-shared"
+}
+
+# The staging Key Vault was created during setup and already holds the app's secrets.
+data "azurerm_key_vault" "staging" {
+  name                = "kv-dsk-staging-f2500b"
+  resource_group_name = data.azurerm_resource_group.this.name
 }
 
 # Where the app's logs go. The daily cap protects the student credit.
@@ -48,7 +52,7 @@ resource "azurerm_container_app_environment" "this" {
   }
 }
 
-# The app's own identity, so it can pull images without a password.
+# The app's own identity, so it can pull images and read secrets without a password.
 resource "azurerm_user_assigned_identity" "app" {
   name                = "id-dsk-staging-app"
   location            = local.location
@@ -59,6 +63,13 @@ resource "azurerm_user_assigned_identity" "app" {
 resource "azurerm_role_assignment" "acr_pull" {
   scope                = data.azurerm_container_registry.shared.id
   role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+  principal_type       = "ServicePrincipal"
+}
+
+resource "azurerm_role_assignment" "kv_secrets" {
+  scope                = data.azurerm_key_vault.staging.id
+  role_definition_name = "Key Vault Secrets User"
   principal_id         = azurerm_user_assigned_identity.app.principal_id
   principal_type       = "ServicePrincipal"
 }
@@ -81,6 +92,26 @@ resource "azurerm_container_app" "deskshark" {
     identity = azurerm_user_assigned_identity.app.id
   }
 
+  # Secrets are read from Key Vault by the app's own identity.
+  # Terraform never sees the values.
+  secret {
+    name                = "mongo-uri"
+    key_vault_secret_id = "${data.azurerm_key_vault.staging.vault_uri}secrets/mongo-uri"
+    identity            = azurerm_user_assigned_identity.app.id
+  }
+
+  secret {
+    name                = "clerk-secret-key"
+    key_vault_secret_id = "${data.azurerm_key_vault.staging.vault_uri}secrets/clerk-secret-key"
+    identity            = azurerm_user_assigned_identity.app.id
+  }
+
+  secret {
+    name                = "clerk-publishable-key"
+    key_vault_secret_id = "${data.azurerm_key_vault.staging.vault_uri}secrets/clerk-publishable-key"
+    identity            = azurerm_user_assigned_identity.app.id
+  }
+
   template {
     min_replicas = 0 # scales to zero when idle, so staging costs almost nothing
     max_replicas = 1
@@ -96,6 +127,31 @@ resource "azurerm_container_app" "deskshark" {
       image  = local.image
       cpu    = 0.25
       memory = "0.5Gi"
+
+      env {
+        name  = "NODE_ENV"
+        value = "production"
+      }
+
+      env {
+        name  = "PORT"
+        value = "5000"
+      }
+
+      env {
+        name        = "MONGO_URI"
+        secret_name = "mongo-uri"
+      }
+
+      env {
+        name        = "CLERK_SECRET_KEY"
+        secret_name = "clerk-secret-key"
+      }
+
+      env {
+        name        = "CLERK_PUBLISHABLE_KEY"
+        secret_name = "clerk-publishable-key"
+      }
     }
   }
 
@@ -120,9 +176,13 @@ resource "azurerm_container_app" "deskshark" {
     ]
   }
 
-  depends_on = [azurerm_role_assignment.acr_pull]
+  depends_on = [
+    azurerm_role_assignment.acr_pull,
+    azurerm_role_assignment.kv_secrets,
+  ]
 }
 
 output "app_url" {
   value = "https://${azurerm_container_app.deskshark.ingress[0].fqdn}"
 }
+
