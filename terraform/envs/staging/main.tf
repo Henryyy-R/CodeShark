@@ -26,7 +26,8 @@ data "azurerm_key_vault" "staging" {
   resource_group_name = data.azurerm_resource_group.this.name
 }
 
-# Where the app's logs go. The daily cap protects the student credit.
+# Log workspace for later monitoring. A diagnostic setting will connect the
+# environment to it in a later step.
 resource "azurerm_log_analytics_workspace" "this" {
   name                = "log-dsk-staging"
   location            = local.location
@@ -37,18 +38,23 @@ resource "azurerm_log_analytics_workspace" "this" {
   tags                = local.tags
 }
 
-# The shared "hosting space" that Container Apps run inside.
-resource "azurerm_container_app_environment" "this" {
-  name                       = "cae-dsk-staging"
-  location                   = local.location
-  resource_group_name        = data.azurerm_resource_group.this.name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
-  tags                       = local.tags
+# A STANDARD (consumption-only) environment. We request the mode explicitly,
+# because the default in this subscription turned out to be Express, which has
+# no Key Vault secret references, no custom domains, and no Azure Files.
+resource "azapi_resource" "env" {
+  type      = "Microsoft.App/managedEnvironments@2026-07-01"
+  name      = "cae-dsk-staging-std"
+  parent_id = data.azurerm_resource_group.this.id
+  location  = local.location
+  tags      = local.tags
 
-  # Azure adds a default "Consumption" workload profile that the provider
-  # reports as a difference on every plan. We leave it to Azure.
-  lifecycle {
-    ignore_changes = [workload_profile]
+  # The newest API version may be newer than the provider's built-in schema.
+  schema_validation_enabled = false
+
+  body = {
+    properties = {
+      environmentMode = "ConsumptionOnly"
+    }
   }
 }
 
@@ -76,10 +82,9 @@ resource "azurerm_role_assignment" "kv_secrets" {
 
 resource "azurerm_container_app" "deskshark" {
   name                         = "ca-deskshark-staging"
-  container_app_environment_id = azurerm_container_app_environment.this.id
+  container_app_environment_id = azapi_resource.env.id
   resource_group_name          = data.azurerm_resource_group.this.name
   revision_mode                = "Single"
-  workload_profile_name        = "Consumption"
   tags                         = local.tags
 
   identity {
