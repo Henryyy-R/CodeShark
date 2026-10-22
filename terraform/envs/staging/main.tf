@@ -127,6 +127,13 @@ resource "azurerm_container_app" "deskshark" {
       concurrent_requests = "10"
     }
 
+    volume {
+      name          = "uploads"
+      storage_type  = "AzureFile"
+      storage_name  = azurerm_container_app_environment_storage.uploads.name
+      mount_options = "uid=1000,gid=1000,dir_mode=0770,file_mode=0660"
+    }
+
     container {
       name   = "deskshark"
       image  = local.image
@@ -156,6 +163,11 @@ resource "azurerm_container_app" "deskshark" {
       env {
         name        = "CLERK_PUBLISHABLE_KEY"
         secret_name = "clerk-publishable-key"
+      }
+
+      volume_mounts {
+        name = "uploads"
+        path = "/app/backend/uploads"
       }
     }
   }
@@ -190,4 +202,3 @@ resource "azurerm_container_app" "deskshark" {
 output "app_url" {
   value = "https://${azurerm_container_app.deskshark.ingress[0].fqdn}"
 }
-
