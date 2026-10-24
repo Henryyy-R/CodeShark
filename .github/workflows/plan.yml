@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        stack: [shared, envs/staging]
+        stack: [shared, envs/staging, envs/prod]
     defaults:
       run:
         working-directory: terraform/${{ matrix.stack }}
