@@ -1,7 +1,7 @@
 resource "azurerm_storage_account" "uploads" {
   name                            = "stdskuploadsprodf2500b"
   resource_group_name             = data.azurerm_resource_group.this.name
-  location                        = data.azurerm_resource_group.this.location
+  location                        = local.location
   account_tier                    = "Standard"
   account_replication_type        = "LRS"
   account_kind                    = "StorageV2"

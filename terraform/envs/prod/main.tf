@@ -1,5 +1,5 @@
 locals {
-  location    = "eastasia"
+  location    = "japaneast"
   image       = "${data.azurerm_container_registry.shared.login_server}/deskshark:${local.image_tag}"
   target_port = 5000
 
