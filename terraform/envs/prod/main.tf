@@ -1,7 +1,11 @@
 locals {
-  location    = "japaneast"
+  location    = "eastasia"
   image       = "${data.azurerm_container_registry.shared.login_server}/deskshark:${local.image_tag}"
   target_port = 5000
+
+  # Azure for Students allows only one Container App Environment per subscription.
+  # Staging owns it, so production runs as a second app inside it.
+  env_id = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/rg-dsk-staging/providers/Microsoft.App/managedEnvironments/cae-dsk-staging-std"
 
   tags = {
     app   = "deskshark"
@@ -9,6 +13,8 @@ locals {
     owner = "henryyy"
   }
 }
+
+data "azurerm_client_config" "current" {}
 
 data "azurerm_resource_group" "this" {
   name = "rg-dsk-prod"
@@ -24,36 +30,6 @@ data "azurerm_container_registry" "shared" {
 data "azurerm_key_vault" "prod" {
   name                = "kv-dsk-prod-f2500b"
   resource_group_name = data.azurerm_resource_group.this.name
-}
-
-resource "azurerm_log_analytics_workspace" "this" {
-  name                = "log-dsk-prod"
-  location            = local.location
-  resource_group_name = data.azurerm_resource_group.this.name
-  sku                 = "PerGB2018"
-  retention_in_days   = 30
-  daily_quota_gb      = 0.1
-  tags                = local.tags
-}
-
-# A STANDARD (consumption-only) environment, requested explicitly because the
-# default in this subscription is Express, which has no Key Vault references,
-# no custom domains and no Azure Files.
-resource "azapi_resource" "env" {
-  type      = "Microsoft.App/managedEnvironments@2026-07-01"
-  name      = "cae-dsk-prod"
-  parent_id = data.azurerm_resource_group.this.id
-  location  = local.location
-  tags      = local.tags
-
-  # The newest API version may be newer than the provider's built-in schema.
-  schema_validation_enabled = false
-
-  body = {
-    properties = {
-      environmentMode = "ConsumptionOnly"
-    }
-  }
 }
 
 # The app's own identity, so it can pull images and read secrets without a password.
@@ -80,7 +56,7 @@ resource "azurerm_role_assignment" "kv_secrets" {
 
 resource "azurerm_container_app" "deskshark" {
   name                         = "ca-deskshark-prod"
-  container_app_environment_id = azapi_resource.env.id
+  container_app_environment_id = local.env_id
   resource_group_name          = data.azurerm_resource_group.this.name
   revision_mode                = "Single"
   tags                         = local.tags
