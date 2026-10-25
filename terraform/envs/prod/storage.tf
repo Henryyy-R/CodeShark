@@ -15,9 +15,10 @@ resource "azurerm_storage_share" "uploads" {
   quota              = 5
 }
 
+# Registered in the shared environment. "uploads" is already taken by staging.
 resource "azurerm_container_app_environment_storage" "uploads" {
-  name                         = "uploads"
-  container_app_environment_id = azapi_resource.env.id
+  name                         = "uploads-prod"
+  container_app_environment_id = local.env_id
   account_name                 = azurerm_storage_account.uploads.name
   share_name                   = azurerm_storage_share.uploads.name
   access_key                   = azurerm_storage_account.uploads.primary_access_key
