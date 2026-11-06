@@ -1,5 +1,5 @@
 # The DeskShark image version that production runs.
 # Promote a version by copying the tag that staging has already tested.
 locals {
-  image_tag = "0933387b5312"
+  image_tag = "ac4ce6ff94f6"
 }
